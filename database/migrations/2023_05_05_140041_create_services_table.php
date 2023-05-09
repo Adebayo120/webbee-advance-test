@@ -19,7 +19,7 @@ return new class extends Migration
                 ->cascadeOnDelete();
             $table->unsignedInteger('bookable_duration_in_minutes');
             $table->unsignedInteger('break_between_slots_in_minutes')->default(0);
-            $table->unsignedBigInteger('future_bookable_days')->nullable();
+            $table->unsignedBigInteger('future_bookable_days')->default(config('app.default_future_bookable_days'));
             $table->unsignedBigInteger('bookable_appointments_per_slot_count')->default(1);
             $table->timestamps();
         });

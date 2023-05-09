@@ -18,7 +18,8 @@ class AppointmentResource extends JsonResource
             'first_name' => $this->first_name,
             'last_name' => $this->last_name,
             'email' => $this->email,
-            'slot_id' => $this->slot_id,
+            'start_date' => $this->start_date->toDateTimeString(),
+            'end_date' => $this->end_date->toDateTimeString(),
         ];
     }
 }

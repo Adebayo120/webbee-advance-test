@@ -1,26 +1,27 @@
 <?php
 
-use App\Models\Slot;
 use App\Models\Service;
 use App\Models\PlannedOff;
 use App\Models\Appointment;
-use App\Models\BookableCalender;
 use App\Models\ConfiguredBreak;
+use App\Enums\DaysOfTheWeekEnum;
+use App\Models\BookableCalender;
+use App\Helpers\Models\SlotHelper;
 
 test('request require slot id', function () {
     $response = $this->postJson('api/v1/book/appointment');
 
-    $response->assertInvalid('slot_id');
+    $response->assertInvalid('service_id');
 });
 
 test('request validate slot exists on database', function () {
     $slotId = fake()->randomDigitNotNull();
 
     $response = $this->postJson("api/v1/book/appointment", [
-        'slot_id' => $slotId
+        'service_id' => $slotId
     ]);
 
-    $response->assertInvalid(['slot_id' => 'id is invalid']);
+    $response->assertInvalid(['service_id' => 'id is invalid']);
 });
 
 test('request require profiles', function () {
@@ -30,18 +31,27 @@ test('request require profiles', function () {
 });
 
 test('request validates slot is available', function () {
-    $service = Service::factory()->create();
+    $service = Service::factory()->create([
+        'bookable_appointments_per_slot_count' => $num = fake()->randomDigitNotNull()
+    ]);
 
     $calender = BookableCalender::factory()->for($service)->create();
 
-    $slot = Slot::factory()
-                ->for($calender)
-                ->has(
-                    Appointment::factory()->count($service->bookable_appointments_per_slot_count)
-                )->create();
+    $startDate =now()->startOfWeek(DaysOfTheWeekEnum::SUNDAY->value)
+                    ->addDays($calender->day)
+                    ->startOfDay()
+                    ->setMinutes($calender->opening_hour_in_minutes);
+
+    $slot = (new SlotHelper)->forService($service)->forSlot($startDate);
+
+    Appointment::factory()->count($num)->create([
+        'start_date' => $slot->getStartDate(),
+        'end_date' => $slot->getEndDate(),
+    ]);
 
     $response = $this->postJson('api/v1/book/appointment', [
-        'slot_id' => $slot->id,
+        'service_id' => $service->id,
+        'start_date_in_timestamp' => $startDate->timestamp,
         'profiles' => [[
             'email' => fake()->safeEmail(),
             'first_name' => fake()->firstName(),
@@ -57,17 +67,20 @@ test('request validates slot is on planned off date', function () {
 
     $calender = BookableCalender::factory()->for($service)->create();
 
-    $slot = Slot::factory()
-                ->for($calender)
-                ->create();
+
+    $startDate =now()->startOfWeek(DaysOfTheWeekEnum::SUNDAY->value)
+                    ->addDays($calender->day)
+                    ->startOfDay()
+                    ->setMinutes($calender->opening_hour_in_minutes);
     
     PlannedOff::factory()->for($service)->create([
-        'start_date' => $slot->start_date->startOfDay(),
-        'end_date' => $slot->start_date->endOfDay(),
+        'start_date' => $startDate->copy()->startOfDay(),
+        'end_date' => $startDate->copy()->endOfDay(),
     ]);
 
     $response = $this->postJson('api/v1/book/appointment', [
-        'slot_id' => $slot->id,
+        'service_id' => $service->id,
+        'start_date_in_timestamp' => $startDate->timestamp,
         'profiles' => [[
             'email' => fake()->safeEmail(),
             'first_name' => fake()->firstName(),
@@ -79,14 +92,18 @@ test('request validates slot is on planned off date', function () {
 });
 
 test('request validates slot exist on bookable calender', function () {
-    $slot = Slot::factory()->create();
-    
-    $calender = $slot->bookableCalender;
-    $calender->day = $calender->day + 1;
-    $calender->save();
+    $service = Service::factory()->create();
+
+    $calender = BookableCalender::factory()->for($service)->create();
+
+    $startDate =now()->startOfWeek(DaysOfTheWeekEnum::SUNDAY->value)
+                    ->addDays($calender->day)
+                    ->startOfDay()
+                    ->setMinutes($calender->opening_hour_in_minutes);
 
     $response = $this->postJson('api/v1/book/appointment', [
-        'slot_id' => $slot->id,
+        'service_id' => $service->id,
+        'start_date_in_timestamp' => $startDate->subMinute()->timestamp,
         'profiles' => [[
             'email' => fake()->safeEmail(),
             'first_name' => fake()->firstName(),
@@ -98,13 +115,18 @@ test('request validates slot exist on bookable calender', function () {
 });
 
 test('request validates slot exist on bookable slot', function () {
-    $slot = Slot::factory()->create();
+    $service = Service::factory()->create();
 
-    $slot->start_date = $slot->start_date->addMinute();
-    $slot->save();
+    $calender = BookableCalender::factory()->for($service)->create();
+
+    $startDate =now()->startOfWeek(DaysOfTheWeekEnum::SUNDAY->value)
+                    ->addDays($calender->day)
+                    ->startOfDay()
+                    ->setMinutes($calender->opening_hour_in_minutes);
 
     $response = $this->postJson('api/v1/book/appointment', [
-        'slot_id' => $slot->id,
+        'service_id' => $service->id,
+        'start_date_in_timestamp' => $startDate->subMinute()->timestamp,
         'profiles' => [[
             'email' => fake()->safeEmail(),
             'first_name' => fake()->firstName(),
@@ -117,20 +139,20 @@ test('request validates slot exist on bookable slot', function () {
 
 test('request validates slot falls on future bookable date', function () {
     $service = Service::factory()->create([
-        'future_bookable_days' => 1
+        'future_bookable_days' => $days = fake()->randomDigitNotNull()
     ]);
 
     $calender = BookableCalender::factory()->for($service)->create();
 
-    $slot = Slot::factory()
-                ->for($calender)
-                ->create();
-    
-    $slot->start_date = $slot->start_date->addWeek();
-    $slot->save();
+    $startDate =now()->startOfWeek(DaysOfTheWeekEnum::SUNDAY->value)
+                    ->addDays($calender->day)
+                    ->startOfDay()
+                    ->addWeeks($days)
+                    ->setMinutes($calender->opening_hour_in_minutes);
 
     $response = $this->postJson('api/v1/book/appointment', [
-        'slot_id' => $slot->id,
+        'service_id' => $service->id,
+        'start_date_in_timestamp' => $startDate->subMinute()->timestamp,
         'profiles' => [[
             'email' => fake()->safeEmail(),
             'first_name' => fake()->firstName(),
@@ -144,19 +166,20 @@ test('request validates slot falls on future bookable date', function () {
 test('request validates slot does not fall on configured break', function () {
     $service = Service::factory()->create();
 
-    $break = ConfiguredBreak::factory()->for($service)->create();
-
     $calender = BookableCalender::factory()->for($service)->create();
-
-    $slot = Slot::factory()
-                ->for($calender)
-                ->create();
     
-    $slot->start_date = $slot->start_date->startOfDay()->addMinutes($break->start_hour_in_minutes);
-    $slot->save();
+    ConfiguredBreak::factory()->for($service)->create([
+        'start_hour_in_minutes' => $calender->opening_hour_in_minutes
+    ]);
+
+    $startDate = now()->startOfWeek(DaysOfTheWeekEnum::SUNDAY->value)
+                    ->addDays($calender->day)
+                    ->startOfDay()
+                    ->setMinutes($calender->opening_hour_in_minutes);
 
     $response = $this->postJson('api/v1/book/appointment', [
-        'slot_id' => $slot->id,
+        'service_id' => $service->id,
+        'start_date_in_timestamp' => $startDate->timestamp,
         'profiles' => [[
             'email' => fake()->safeEmail(),
             'first_name' => fake()->firstName(),

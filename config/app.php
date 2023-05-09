@@ -185,4 +185,6 @@ return [
         // 'Example' => App\Facades\Example::class,
     ])->toArray(),
 
+    'default_future_bookable_days' => env('DEFAULT_FUTURE_BOOKABLE_DAY', 20)
+
 ];

@@ -2,7 +2,8 @@
 
 namespace App\Http\Requests\Booking;
 
-use App\Models\Slot;
+use Carbon\Carbon;
+use App\Models\Service;
 use App\Helpers\Models\SlotHelper;
 use Illuminate\Validation\Validator;
 use App\Validation\ValidateSlotIsAvailable;
@@ -15,6 +16,8 @@ use App\Validation\ValidateSlotExistsInBookableSlotsInCalender;
 
 class BookAppointmentRequest extends FormRequest
 {
+    private SlotHelper $slot;
+
     /**
      * Determine if the user is authorized to make this request.
      */
@@ -31,12 +34,20 @@ class BookAppointmentRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'slot_id' => ['required', 'exists:slots,id'],
+            'service_id' => ['required', 'exists:services,id'],
+            'start_date_in_timestamp' => ['required', 'numeric', 'min_digits:10'],
             'profiles' => ['required', 'array'],
             'profiles.*.first_name' => ['required', 'string'],
             'profiles.*.last_name' => ['required', 'string'],
             'profiles.*.email' => ['required', 'email']
         ];
+    }
+
+    protected function passedValidation(): void
+    {
+        $this->merge([
+            'slot' => $this->slot,
+        ]);
     }
 
     public function after(Validator $validator): array
@@ -45,17 +56,19 @@ class BookAppointmentRequest extends FormRequest
             return [];
         }
 
-        $slot = (new SlotHelper())->forSlot(
-            Slot::withCount('appointments')->find($this->slot_id)
-        );
+        $startDate = Carbon::createFromTimestamp($this->start_date_in_timestamp);
+
+        $this->slot = (new SlotHelper)
+                            ->forService(Service::find($this->service_id))
+                            ->forSlot($startDate);
     
         return [
-            new ValidateSlotIsAvailable($slot, count($this->profiles)),
-            new ValidateSlotExistsInBookableCalender($slot),
-            new ValidateSlotNotFallOnPlannedOfDate($slot),
-            new ValidateSlotFallBetweenFutureBookableDate($slot),
-            new ValidateSlotNotFallBetweenConfiguredBreaks($slot),
-            new ValidateSlotExistsInBookableSlotsInCalender($slot)
+            new ValidateSlotIsAvailable($this->slot, count($this->profiles)),
+            new ValidateSlotExistsInBookableCalender($this->slot),
+            new ValidateSlotNotFallOnPlannedOfDate($this->slot),
+            new ValidateSlotFallBetweenFutureBookableDate($this->slot),
+            new ValidateSlotNotFallBetweenConfiguredBreaks($this->slot),
+            new ValidateSlotExistsInBookableSlotsInCalender($this->slot)
         ];
     }
 }

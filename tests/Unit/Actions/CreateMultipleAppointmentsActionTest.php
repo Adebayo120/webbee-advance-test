@@ -1,13 +1,25 @@
 <?php
 
-use App\Models\Slot;
+use App\Models\Service;
+use App\Helpers\Models\SlotHelper;
 use App\Actions\CreateMultipleAppointmentsAction;
+use App\Models\BookableCalender;
 
 test('handle method creates multiple appointments', function () {
-    $slot = Slot::factory()->create();
+    $service = Service::factory()->create();
+
+    $date = now();
+
+    BookableCalender::factory()->for($service)->create([
+        'day' => now()->dayOfWeek
+    ]);
+
+    $slot = (new SlotHelper)->forService($service)->forSlot($date);
     
     $data = [
-        'slot_id' => $slot->id,
+        'service_id' => $service->id,
+        'start_date' => now(),
+        'slot' => $slot,
         'profiles' => [[
             'first_name' => $firstName = fake()->firstName(),
             'last_name' => $lastName = fake()->lastName(),

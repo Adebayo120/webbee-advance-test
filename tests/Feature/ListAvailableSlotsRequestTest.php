@@ -47,14 +47,10 @@ test('request returns successful response', function () {
         'opening_hour_in_minutes' => 480,
         'closing_hour_in_minutes' => 1320
     ]);
-    
-    Slot::factory()->for($calender)->create([
-        'start_date' => now()->startOfDay()->addMinutes(480)
-    ]);
 
     $startOfMonthInUnixTimestamp = now()->startOfMonth()->timestamp;
 
-    $endOfMonthInUnixTimestamp = now()->startOfMonth()->timestamp;
+    $endOfMonthInUnixTimestamp = now()->endOfMonth()->timestamp;
 
     $response = $this->getJson(
         "api/v1/available-slots?date_range[start_date_in_unix_timestamp]={$startOfMonthInUnixTimestamp}&date_range[end_date_in_unix_timestamp]={$endOfMonthInUnixTimestamp}&service_id={$calender->service_id}"
@@ -65,17 +61,20 @@ test('request returns successful response', function () {
 
 test('request returns appropriate json response', function () {
 
-    $slot = Slot::factory()->create();
+    $calender = BookableCalender::factory()->create([
+        'opening_hour_in_minutes' => 480,
+        'closing_hour_in_minutes' => 1320
+    ]);
+
 
     $startOfMonthInUnixTimestamp = now()->startOfMonth()->timestamp;
 
     $endOfMonthInUnixTimestamp = now()->endOfMonth()->timestamp;
     
     $response = $this->getJson(
-        "api/v1/available-slots?date_range[start_date_in_unix_timestamp]={$startOfMonthInUnixTimestamp}&date_range[end_date_in_unix_timestamp]={$endOfMonthInUnixTimestamp}&service_id={$slot->bookableCalender->service_id}"
+        "api/v1/available-slots?date_range[start_date_in_unix_timestamp]={$startOfMonthInUnixTimestamp}&date_range[end_date_in_unix_timestamp]={$endOfMonthInUnixTimestamp}&service_id={$calender->service_id}"
     );
 
-    $response->assertJsonPath('data.available_dates.0', $slot->start_date_without_time_in_unix_timestamp);
-    $response->assertJsonPath("data.available_slots.{$slot->start_date_in_unix_timestamp}.id", $slot->id);
+    $response->assertJsonPath('data.bookable_duration_in_minutes', $calender->service->bookable_duration_in_minutes);
 });
 

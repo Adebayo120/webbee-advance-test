@@ -2,6 +2,7 @@
 
 namespace App\Helpers\Models;
 
+use App\Models\BookableCalender;
 use App\Models\Service;
 use Carbon\Carbon;
 
@@ -29,5 +30,12 @@ class ServiceHelper
     public function futureBookableDateIsGreaterThanOrEqual(Carbon $date): bool
     {
         return $this->futureBookableDate()->greaterThanOrEqualTo($date);
+    }
+
+    public function bookableCalenderForSlotDate(Carbon $startDate): ?BookableCalender
+    {
+        return $this->service->bookableCalender()
+                        ->where('day', $startDate->dayOfWeek)
+                        ->first();
     }
 }

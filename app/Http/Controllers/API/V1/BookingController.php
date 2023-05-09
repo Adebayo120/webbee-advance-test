@@ -18,7 +18,7 @@ class BookingController extends Controller
 
     public function getAvailableSlots(GetAvailableSlotsRequest $request): JsonResponse
     {
-        $data = $this->bookingService->getAvailableSlots($request->service, $request->validated());
+        $data = $this->bookingService->getAvailableSlots($request->service, $request->start_date, $request->end_date);
 
         return (new ResponseHelper(
             data: $data,
@@ -28,7 +28,7 @@ class BookingController extends Controller
 
     public function bookAppointment(BookAppointmentRequest $request): JsonResponse
     {
-        $data = $this->bookingService->bookAppointment($request->validated());
+        $data = $this->bookingService->bookAppointment($request->all());
 
         return (new ResponseHelper(
             data: $data,

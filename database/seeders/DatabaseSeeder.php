@@ -18,8 +18,7 @@ class DatabaseSeeder extends Seeder
             ServiceSeeder::class,
             BookableCalenderSeeder::class,
             ConfiguredBreakSeeder::class,
-            PlannedOffSeeder::class,
-            SlotSeeder::class
+            PlannedOffSeeder::class
         ]);
     }
 }

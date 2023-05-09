@@ -2,20 +2,30 @@
 
 namespace App\Helpers\Models;
 
-use App\Models\Slot;
-use App\Models\Service;
-use App\Helpers\Models\BookableCalenderHelper;
 use Carbon\Carbon;
+use App\Models\Service;
+use App\Models\Appointment;
+use App\Enums\DaysOfTheWeekEnum;
+use Illuminate\Database\Eloquent\Collection;
+use App\Helpers\Models\BookableCalenderHelper;
 
 class SlotHelper
 {
-    private Slot $slot;
-
     private Service $service;
+
+    private ServiceHelper $serviceHelper;
 
     private BookableCalenderHelper $bookableCalender;
 
     private ConfiguredBreakHelper $configuredBreak;
+
+    private Carbon $startDate;
+
+    private Carbon $endDate;
+
+    private Collection $availableBookableCalenders;
+
+    private Collection $bookedAppointments;
 
     private int $day;
 
@@ -23,17 +33,25 @@ class SlotHelper
 
     private int $endDateInMinutes;
 
-    public function forSlot(Slot $slot): self
+    private array $availableSlots = [];
+
+    private array $availableDates = [];
+
+    public function __construct()
     {
-        $this->slot = $slot;
+        $this->startDate = now()->startOfDay();
+    }
 
-        $this->bookableCalender = (new BookableCalenderHelper())->forBookableCalender($slot->bookableCalender);
+    public function forSlot(Carbon $startDate): self
+    {
+        $this->startDate = $startDate;
 
-        $this->service = $slot->bookableCalender->service;
+        if ($bookableCalender = $this->serviceHelper->bookableCalenderForSlotDate($startDate)) {
+            $this->bookableCalender = (new BookableCalenderHelper())->forBookableCalender($bookableCalender);
+        }
+
 
         $this->configuredBreak = (new ConfiguredBreakHelper)->forService($this->service);
-
-        $startDate = $this->slot->start_date;
 
         $this->day = $startDate->dayOfWeek;
 
@@ -44,14 +62,65 @@ class SlotHelper
         return $this;
     }
 
+    public function whereBetween(Carbon $startDate, Carbon $endDate): self
+    {
+        $this->startDate = $startDate;
+
+        $this->endDate = $endDate;
+
+        return $this;
+    }
 
     public function forService(Service $service): self
     {
         $this->service = $service;
 
+        $this->serviceHelper = (new ServiceHelper)->forService($service);
+
         $this->configuredBreak = (new ConfiguredBreakHelper)->forService($this->service);
 
+        $this->endDate = $this->endDate ?? (new ServiceHelper)->forService($service)->futureBookableDate();
+
         return $this;
+    }
+
+    public function forAvailableBookableCalenders(): self
+    {
+        $this->availableBookableCalenders = $this->service->availableBookableCalenders->filter(function ($calender) {
+            return $this->startDate->diffInDaysFiltered(function (Carbon $date) use($calender){
+                return $date->dayOfWeek == $calender->day;
+            }, $this->endDate);
+        });
+
+        return $this;
+    }
+
+    public function generateBookedAppointments(?Carbon $startDate = null, ?Carbon $endDate = null): self
+    {
+        $startDate = $startDate ?? $this->startDate;
+
+        $endDate = $endDate ?? $this->getEndDate();
+
+        $this->bookedAppointments = Appointment::where('start_date', $startDate)
+                                                ->where('end_date', $endDate)
+                                                ->get();
+
+        return $this;
+    }
+
+    public function getAppointmentCount(): int
+    {
+        return $this->bookedAppointments->count();
+    }
+
+    public function getEndDate(): Carbon
+    {
+        return $this->startDate->copy()->addMinutes($this->service->bookable_duration_in_minutes);
+    }
+
+    public function getStartDate(): Carbon
+    {
+        return $this->startDate;
     }
 
     public function getEndHourInMinutes(?int $startHourInMinutes = null): int
@@ -61,14 +130,9 @@ class SlotHelper
         return $startHourInMinutes + $this->service->bookable_duration_in_minutes;
     }
 
-    public function bookableAppointmentCount(): int
-    {
-        return $this->service->bookable_appointments_per_slot_count - $this->slot->appointments_count;
-    }
-
     public function isAvailable(int $additionalAppointmentsCount = 0): bool
     {
-        return  $this->bookableCalender->isAvailable() && 
+        return  $this->bookableCalender->isAvailable() &&
                 $this->bookableAppointmentCount() >= $additionalAppointmentsCount;
     }
 
@@ -121,11 +185,9 @@ class SlotHelper
 
     public function fallOnPlannedOffDate(?Carbon $startDate = null, ?Carbon $endDate = null): bool
     {
-        $startDate = $startDate ?? $this->slot->start_date;
+        $startDate = $startDate ?? $this->startDate;
 
-        $endDate = $endDate ?? $this->slot->start_date->addMinutes(
-            $this->service->bookable_duration_in_minutes
-        );
+        $endDate = $endDate ?? $this->getEndDate();
 
         return (bool) (new PlannedOffHelper)
                         ->forService($this->service)
@@ -139,10 +201,93 @@ class SlotHelper
     {
         $service = (new ServiceHelper())->forService($this->service);
 
-        $startDate = $startDate ?? $this->slot->start_date;
+        $startDate = $startDate ?? $this->startDate;
 
         return $service->hasFutureBookableDayLimit() ?
                 $service->futureBookableDateIsGreaterThanOrEqual($startDate) :
                 true;
+    }
+
+    public function generateAvailableSlots(): self
+    {
+        $this->availableBookableCalenders->each(function ($calender) {
+            $bookableCalenderHelper = (new BookableCalenderHelper())->forBookableCalender($calender);
+
+            $bookableSlotsHoursInMinutes = $bookableCalenderHelper->generateCalenderSlotHoursInMinutes()
+                                                                ->getBookableSlotsHoursInMinutes();
+
+            if (!count($bookableSlotsHoursInMinutes)) {
+                return;
+            }
+
+            $startDate = $this->startDate->greaterThanOrEqualTo(now()->startOfDay()) ?
+                            $this->startDate :
+                            now();
+
+            $bookableDate = $startDate->startOfWeek(DaysOfTheWeekEnum::SUNDAY->value)
+                                    ->addDays($calender->day)
+                                    ->endOfDay();
+            while (
+                $this->fallBetweenFutureBookableDate($bookableDate) && 
+                $bookableDate->lessThanOrEqualTo($this->endDate)
+            ) {
+                $availableSlots = [];
+                foreach ($bookableSlotsHoursInMinutes as $key => $arrayOfMinutes) {
+                    $slotStartDate = $bookableDate->copy()->startOfDay()->addMinutes($arrayOfMinutes[0]);
+                    $slotEndDate = $bookableDate->copy()->startOfDay()->addMinutes($arrayOfMinutes[1]);
+                    
+                    $bookedAppointmentsCount = $this->bookedAppointmentsCountForDate($slotStartDate, $slotEndDate);
+
+                    if (
+                        $slotStartDate->lessThan(now()) ||
+                        $bookedAppointmentsCount >= $this->service->bookable_appointments_per_slot_count ||
+                        $this->fallOnPlannedOffDate($slotStartDate, $slotEndDate)
+                    ) {
+                        continue;
+                    }
+                
+                    $availableSlots[] = [
+                        'start_date' => $slotStartDate->timestamp,
+                        'bookable_appointments_count' => $this->bookableAppointmentCount($slotStartDate, $slotEndDate)
+                    ];
+                }
+
+                $this->availableSlots = [...$this->availableSlots, ...$availableSlots];
+                
+                if (count($availableSlots)) {
+                    $this->availableDates[] = $slotStartDate->startOfDay()->timestamp;
+                }
+
+                $bookableDate->addWeek()->endOfDay();
+            }
+        });
+
+        return $this;
+    }
+
+    public function bookableAppointmentCount(?Carbon $startDate = null, ?Carbon $endDate = null): int
+    {
+        $startDate = $startDate ?? $this->getStartDate();
+
+        $endDate = $endDate ?? $this->getEndDate();
+
+        return $this->service->bookable_appointments_per_slot_count - $this->generateBookedAppointments($startDate, $endDate)->getAppointmentCount();
+    }
+
+    public function bookedAppointmentsCountForDate(Carbon $startDate, Carbon $endDate): int
+    {
+        return $this->bookedAppointments->where('start_date', $startDate)
+                                        ->where('end_date', $endDate)
+                                        ->count();
+    }
+
+    public function getAvailableSlots (): array
+    {
+        return $this->availableSlots;
+    }
+
+    public function getAvailableDates(): array
+    {
+        return $this->availableDates;
     }
 }

@@ -2,11 +2,12 @@
 
 use App\Models\Slot;
 use App\Models\Service;
+use App\Models\PlannedOff;
 use App\Models\Appointment;
 use App\Models\ConfiguredBreak;
+use App\Enums\DaysOfTheWeekEnum;
 use App\Models\BookableCalender;
 use App\Helpers\Models\SlotHelper;
-use App\Models\PlannedOff;
 
 it('can get end hour in minutes', function () {
     $startDateMinutes = fake()->randomDigitNotNull();
@@ -15,84 +16,122 @@ it('can get end hour in minutes', function () {
 
     $service = Service::factory()->create(['bookable_duration_in_minutes' => $bookableDurationInMinutes]);
 
-    $calender = BookableCalender::factory()->for($service)->create();
-
-    $slot = Slot::factory()->for($calender)->create([
-        'start_date' => now()->startOfDay()->setMinutes($startDateMinutes)
-    ]);
+    $startDate = now()->startOfDay()->setMinutes($startDateMinutes);
 
     expect((new SlotHelper)
-                ->forSlot($slot)
+                ->forService($service)
+                ->forSlot($startDate)
                 ->getEndHourInMinutes()
     )->toBe($startDateMinutes + $bookableDurationInMinutes);
 });
 
 it('can get the number of slots bookable appointments', function () {
-    $bookableAppointmentsPerSlot = fake()->randomDigitNotNull();
-
-    $service = Service::factory()->create(['bookable_appointments_per_slot_count' => $bookableAppointmentsPerSlot]);
+    $service = Service::factory()->create(['bookable_appointments_per_slot_count' => 4]);
 
     $calender = BookableCalender::factory()->for($service)->create();
 
-    $slot = Slot::factory()->for($calender)->create();
+    $startDate =now()->startOfWeek(DaysOfTheWeekEnum::SUNDAY->value)
+                    ->addDays($calender->day)
+                    ->startOfDay()
+                    ->setMinutes($calender->opening_hour_in_minutes);
 
-    Appointment::factory()->for($slot)->create();
+    $slot = (new SlotHelper)->forService($service)->forSlot($startDate);
 
-    Appointment::factory()->for($slot)->create();
-
-    $slot->loadCount('appointments');
+    Appointment::factory()->count(2)->create([
+        'start_date' => $slot->getStartDate(),
+        'end_date' => $slot->getEndDate(),
+    ]);
 
     expect((new SlotHelper)
-                ->forSlot($slot)
+                ->forService($service)
+                ->forSlot($startDate)
                 ->bookableAppointmentCount()
-    )->toBe($bookableAppointmentsPerSlot - 2);
+    )->toBe(2);
 });
 
 it('can check if slot is available', function () {
-    $slot = Slot::factory()->create();
+    $service = Service::factory()->create([
+        'bookable_appointments_per_slot_count' => $num = fake()->randomDigitNotNull()
+    ]);
+
+    $calender = BookableCalender::factory()->for($service)->create();
+
+    $startDate =now()->startOfWeek(DaysOfTheWeekEnum::SUNDAY->value)
+                    ->addDays($calender->day)
+                    ->startOfDay()
+                    ->setMinutes($calender->opening_hour_in_minutes);
 
     expect((new SlotHelper)
-                ->forSlot($slot)
+                ->forService($service)
+                ->forSlot($startDate)
                 ->isAvailable()
     )->toBeTrue();
 });
 
 it('can check if slot exists in bookable slots', function () {
-    $slot = Slot::factory()->create();
+    $service = Service::factory()->create();
+
+    $calender = BookableCalender::factory()->for($service)->create();
+
+    $startDate =now()->startOfWeek(DaysOfTheWeekEnum::SUNDAY->value)
+                    ->addDays($calender->day)
+                    ->startOfDay()
+                    ->setMinutes($calender->opening_hour_in_minutes);
 
     expect((new SlotHelper)
-                ->forSlot($slot)
+                ->forService($service)
+                ->forSlot($startDate)
                 ->existsInBookableSlots()
     )->toBeTrue();
 });
 
 it('can check if slot does not exists in bookable slots', function () {
-    $slot = Slot::factory()->create();
+    $service = Service::factory()->create();
 
-    $slot->start_date = $slot->start_date->subHour();
+    $calender = BookableCalender::factory()->for($service)->create();
+
+    $startDate =now()->startOfWeek(DaysOfTheWeekEnum::SUNDAY->value)
+                    ->addDays($calender->day)
+                    ->startOfDay()
+                    ->setMinutes($calender->opening_hour_in_minutes);
 
     expect((new SlotHelper)
-                ->forSlot($slot)
+                ->forService($service)
+                ->forSlot($startDate->subHour())
                 ->existsInBookableSlots()
     )->toBeFalse();
 });
 
 it('can check if slot exists in bookable calender', function () {
-    $slot = Slot::factory()->create();
+    $service = Service::factory()->create();
+
+    $calender = BookableCalender::factory()->for($service)->create();
+
+    $startDate =now()->startOfWeek(DaysOfTheWeekEnum::SUNDAY->value)
+                    ->addDays($calender->day)
+                    ->startOfDay()
+                    ->setMinutes($calender->opening_hour_in_minutes);
 
     expect((new SlotHelper)
-                ->forSlot($slot)
+                ->forService($service)
+                ->forSlot($startDate)
                 ->existsInBookableCalender()
     )->toBeTrue();
 });
 
 it('can check if slot does not exists in bookable calender', function () {
-    $slot = Slot::factory()->create();
+    $service = Service::factory()->create();
 
-    $slot->start_date = $slot->start_date->subHour();
+    $calender = BookableCalender::factory()->for($service)->create();
+
+    $startDate =now()->startOfWeek(DaysOfTheWeekEnum::SUNDAY->value)
+                    ->addDays($calender->day)
+                    ->startOfDay()
+                    ->setMinutes($calender->opening_hour_in_minutes);
 
     expect((new SlotHelper)
-                ->forSlot($slot)
+                ->forService($service)
+                ->forSlot($startDate->subHour())
                 ->existsInBookableCalender()
     )->toBeFalse();
 });
@@ -100,34 +139,37 @@ it('can check if slot does not exists in bookable calender', function () {
 it('can check if slot fall between configured breaks', function () {
     $service = Service::factory()->create();
 
-    $break = ConfiguredBreak::factory()->for($service)->create();
-
     $calender = BookableCalender::factory()->for($service)->create();
-
-    $slot = Slot::factory()
-                ->for($calender)
-                ->create();
     
-    $slot->start_date = $slot->start_date->startOfDay()->addMinutes($break->start_hour_in_minutes);
-    $slot->save();
+    ConfiguredBreak::factory()->for($service)->create([
+        'start_hour_in_minutes' => $calender->opening_hour_in_minutes
+    ]);
+
+    $startDate = now()->startOfWeek(DaysOfTheWeekEnum::SUNDAY->value)
+                    ->addDays($calender->day)
+                    ->startOfDay()
+                    ->setMinutes($calender->opening_hour_in_minutes);
 
     expect((new SlotHelper)
-                ->forSlot($slot)
+                ->forService($service)
+                ->forSlot($startDate)
                 ->fallBetweenConfiguredBreaks()
     )->toBeTrue();
 });
 
 it('can check if slot does not fall between configured breaks', function () {
-    $break = ConfiguredBreak::factory()->create();
+    $service = Service::factory()->create();
 
-    $calender = BookableCalender::factory()->for($break->service)->create();
+    $calender = BookableCalender::factory()->for($service)->create();
 
-    $slot = Slot::factory()->for($calender)->create();
-
-    $slot->start_date = $slot->start_date->subHour();
+    $startDate =now()->startOfWeek(DaysOfTheWeekEnum::SUNDAY->value)
+                    ->addDays($calender->day)
+                    ->startOfDay()
+                    ->setMinutes($calender->opening_hour_in_minutes);
 
     expect((new SlotHelper)
-                ->forSlot($slot)
+                ->forService($service)
+                ->forSlot($startDate)                
                 ->fallBetweenConfiguredBreaks()
     )->toBeFalse();
 });
@@ -144,14 +186,11 @@ it('can add breaks hours in minutes to input', function () {
         'end_hour_in_minutes' => 510
     ]);
 
-    $calender = BookableCalender::factory()->for($service)->create();
-
-    $slot = Slot::factory()->for($calender)->create([
-        'start_date' => now()->startOfDay()->addMinutes(480)
-    ]);
+    $startDate = now()->startOfDay()->addMinutes(480);
 
     expect((new SlotHelper)
-                ->forSlot($slot)
+                ->forService($service)
+                ->forSlot($startDate)
                 ->addBreaksHoursInMinutes()
     )->toBe(510);
 });
@@ -171,27 +210,34 @@ it('can add breaks between slots', function () {
 
     $calender = BookableCalender::factory()->for($service)->create();
 
-    $slot = Slot::factory()->for($calender)->create([
-        'start_date' => now()->startOfDay()->addMinutes(480)
-    ]);
+    $startDate = now()->startOfDay()->addMinutes(480);
 
     expect((new SlotHelper)
-                ->forSlot($slot)
+                ->forService($service)
+                ->forSlot($startDate)                
                 ->addBreakBetweenSlot()
     )->toBe(505);
 });
 
 it('can check if slot fall on planned off date', function () {
-    $off = PlannedOff::factory()->create();
+    $service = Service::factory()->create();
 
-    $calender = BookableCalender::factory()->for($off->service)->create();
+    $calender = BookableCalender::factory()->for($service)->create();
 
-    $slot = Slot::factory()->for($calender)->create([
-        'start_date' => $off->start_date->startOfDay()->addMinutes(480)
+
+    $startDate =now()->startOfWeek(DaysOfTheWeekEnum::SUNDAY->value)
+                    ->addDays($calender->day)
+                    ->startOfDay()
+                    ->setMinutes($calender->opening_hour_in_minutes);
+    
+    PlannedOff::factory()->for($service)->create([
+        'start_date' => $startDate->copy()->startOfDay(),
+        'end_date' => $startDate->copy()->endOfDay(),
     ]);
 
     expect((new SlotHelper)
-                ->forSlot($slot)
+                ->forService($service)
+                ->forSlot($startDate)                 
                 ->fallOnPlannedOffDate()
     )->toBeTrue();
 });
@@ -201,12 +247,14 @@ it('can check if slot fall between future bookable date', function () {
 
     $calender = BookableCalender::factory()->for($service)->create();
 
-    $slot = Slot::factory()->for($calender)->create([
-        'start_date' => now()->addDays($service->future_bookable_days)->startOfDay()->addMinutes(480)
-    ]);
-
+    $startDate =now()->startOfWeek(DaysOfTheWeekEnum::SUNDAY->value)
+                    ->addDays($calender->day)
+                    ->startOfDay()
+                    ->setMinutes($calender->opening_hour_in_minutes);
+                
     expect((new SlotHelper)
-                ->forSlot($slot)
+                ->forService($service)
+                ->forSlot($startDate)                
                 ->fallBetweenFutureBookableDate()
     )->toBeTrue();
 });

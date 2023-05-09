@@ -3,25 +3,28 @@
 namespace App\Services;
 
 use App\Models\Service;
-use App\Processors\SlotProcessor;
-use App\Http\Resources\SlotCollection;
 use App\Http\Resources\AppointmentResource;
 use Illuminate\Http\Resources\Json\JsonResource;
 use App\Actions\CreateMultipleAppointmentsAction;
+use App\Helpers\Models\SlotHelper;
+use Carbon\Carbon;
 
 class BookingService
 {
-    public function getAvailableSlots(Service $service, array $data): JsonResource
+    public function getAvailableSlots(Service $service, Carbon $startDate, Carbon $endDate): array
     {
-        $availableSlots = (new SlotProcessor($data))
-                                ->withFilter()
-                                ->forService($service)
-                                ->isAvailable()
-                                ->belongsToAvailableBookableCalender()
-                                ->notFallOnPlannedOffDate()
-                                ->getBookableSlots();
+        $slotHelper = (new SlotHelper)
+                            ->whereBetween($startDate, $endDate)
+                            ->forService($service)
+                            ->forAvailableBookableCalenders()
+                            ->generateBookedAppointments()
+                            ->generateAvailableSlots();
 
-        return new SlotCollection($availableSlots->keyBy->start_date_in_unix_timestamp);
+        return [
+            'available_dates' => $slotHelper->getAvailableDates(),
+            'bookable_duration_in_minutes' => $service->bookable_duration_in_minutes,
+            'available_slots' => $slotHelper->getAvailableSlots(),
+        ];
     }
 
     public function bookAppointment(array $data): JsonResource

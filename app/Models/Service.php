@@ -19,4 +19,14 @@ class Service extends Model
     {
         return $this->hasMany(PlannedOff::class);
     }
+
+    public function bookableCalender(): HasMany
+    {
+        return $this->hasMany(BookableCalender::class);
+    }
+
+    public function availableBookableCalenders(): HasMany
+    {
+        return $this->bookableCalender()->isAvailable();
+    }
 }

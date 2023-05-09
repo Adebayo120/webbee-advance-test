@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Booking;
 
+use Carbon\Carbon;
 use App\Models\Service;
 use Illuminate\Foundation\Http\FormRequest;
 
@@ -25,8 +26,8 @@ class GetAvailableSlotsRequest extends FormRequest
         return [
             'service_id' => ['required', 'exists:services,id'],
             'date_range' => ['required', 'array'],
-            'date_range.start_date_in_unix_timestamp' => ['required', 'numeric', 'lte:date_range.end_date_in_unix_timestamp'],
-            'date_range.end_date_in_unix_timestamp' => ['required', 'numeric', 'gte:date_range.start_date_in_unix_timestamp']
+            'date_range.start_date_in_unix_timestamp' => ['required', 'numeric', 'lt:date_range.end_date_in_unix_timestamp'],
+            'date_range.end_date_in_unix_timestamp' => ['required', 'numeric', 'gt:date_range.start_date_in_unix_timestamp']
         ];
     }
 
@@ -40,6 +41,10 @@ class GetAvailableSlotsRequest extends FormRequest
 
     protected function passedValidation(): void
     {
-        $this->merge(['service' => Service::find($this->service_id)]);
+        $this->merge([
+            'service' => Service::find($this->service_id),
+            'start_date' => Carbon::createFromTimestamp($this->date_range['start_date_in_unix_timestamp'])->startOfDay(),
+            'end_date' => Carbon::createFromTimestamp($this->date_range['end_date_in_unix_timestamp'])->endOfDay(),
+        ]);
     }
 }
