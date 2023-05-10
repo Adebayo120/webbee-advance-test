@@ -169,7 +169,8 @@ return [
             'fall-between-future-bookable-date' => 'Slot does not fall between future bookable date',
             'is-available' => 'Slot is booked out',
             'not-fall-between-configured-breaks' => 'Slot fall between configured breaks',
-            'not-fall-on-planned-off-date' => 'Slot fall on planned off date'
+            'not-fall-on-planned-off-date' => 'Slot fall on planned off date',
+            'greater-than-now' => 'Cannot book past slot date'
         ],
     ],
 

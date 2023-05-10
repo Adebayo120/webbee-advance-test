@@ -8,6 +8,7 @@ use App\Helpers\Models\SlotHelper;
 use Illuminate\Validation\Validator;
 use App\Validation\ValidateSlotIsAvailable;
 use Illuminate\Foundation\Http\FormRequest;
+use App\Validation\ValidateSlotIsGreaterThanNow;
 use App\Validation\ValidateSlotNotFallOnPlannedOfDate;
 use App\Validation\ValidateSlotExistsInBookableCalender;
 use App\Validation\ValidateSlotFallBetweenFutureBookableDate;
@@ -63,6 +64,7 @@ class BookAppointmentRequest extends FormRequest
                             ->forSlot($startDate);
     
         return [
+            new ValidateSlotIsGreaterThanNow($this->slot),
             new ValidateSlotIsAvailable($this->slot, count($this->profiles)),
             new ValidateSlotExistsInBookableCalender($this->slot),
             new ValidateSlotNotFallOnPlannedOfDate($this->slot),

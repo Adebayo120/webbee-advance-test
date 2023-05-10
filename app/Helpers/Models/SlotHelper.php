@@ -95,6 +95,18 @@ class SlotHelper
         return $this;
     }
 
+    public function generateBookedAppointmentsBetweenDates(?Carbon $startDate = null, ?Carbon $endDate = null): self
+    {
+        $startDate = $startDate ?? $this->startDate;
+
+        $endDate = $endDate ?? $this->getEndDate();
+
+        $this->bookedAppointments = Appointment::whereBetween('end_date', [$startDate, $endDate])
+                                                ->get();
+
+        return $this;
+    }
+
     public function generateBookedAppointments(?Carbon $startDate = null, ?Carbon $endDate = null): self
     {
         $startDate = $startDate ?? $this->startDate;
@@ -121,6 +133,11 @@ class SlotHelper
     public function getStartDate(): Carbon
     {
         return $this->startDate;
+    }
+
+    public function startDateIsGreaterThanNow(): bool
+    {
+        return $this->startDate->greaterThan(now());
     }
 
     public function getEndHourInMinutes(?int $startHourInMinutes = null): int
@@ -224,7 +241,7 @@ class SlotHelper
                             $this->startDate :
                             now();
 
-            $bookableDate = $startDate->startOfWeek(DaysOfTheWeekEnum::SUNDAY->value)
+            $bookableDate = $startDate->copy()->startOfWeek(DaysOfTheWeekEnum::SUNDAY->value)
                                     ->addDays($calender->day)
                                     ->endOfDay();
             while (
@@ -254,8 +271,8 @@ class SlotHelper
 
                 $this->availableSlots = [...$this->availableSlots, ...$availableSlots];
                 
-                if (count($availableSlots)) {
-                    $this->availableDates[] = $slotStartDate->startOfDay()->timestamp;
+                if (count($this->availableSlots)) {
+                    $this->availableDates[] = $slotStartDate->startOfDay()->toDateTimeString();
                 }
 
                 $bookableDate->addWeek()->endOfDay();

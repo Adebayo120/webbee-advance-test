@@ -17,7 +17,7 @@ class BookingService
                             ->whereBetween($startDate, $endDate)
                             ->forService($service)
                             ->forAvailableBookableCalenders()
-                            ->generateBookedAppointments()
+                            ->generateBookedAppointmentsBetweenDates()
                             ->generateAvailableSlots();
 
         return [
